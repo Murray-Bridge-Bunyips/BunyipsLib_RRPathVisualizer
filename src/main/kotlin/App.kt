@@ -21,7 +21,7 @@ class App : Application() {
     val endRect = Rectangle(100.0, 100.0, 10.0, 10.0)
 
     var startTime = Double.NaN
-    val trajectories = TrajectoryGen.createTrajectory()
+    val trajectories = TrajectoryGen.createTrajectories()
 
     lateinit var fieldImage: Image
     lateinit var stage: Stage
@@ -61,16 +61,22 @@ class App : Application() {
 
         root.children.addAll(canvas, startRect, endRect, robotRect)
 
-        stage.title = "PathVisualizer"
+        stage.title = "RRPathVisualizer"
         stage.isResizable = false
 
-        println("duration $duration")
+        for (i in 0 until numberOfTrajectories)
+            println("trajectory ${i + 1} duration: ${trajectoryDurations[i]} sec")
+
+        if (numberOfTrajectories == 0)
+            println("no trajectories generated! add some to TrajectoryGen.createTrajectories()")
+
+        println("total duration: $duration sec")
 
         stage.show()
         t1.play()
     }
 
-    fun run(gc: GraphicsContext) {
+    private fun run(gc: GraphicsContext) {
         if (startTime.isNaN())
             startTime = Clock.seconds
 
@@ -81,17 +87,17 @@ class App : Application() {
 
         gc.globalAlpha = 0.5
         GraphicsUtil.setColor(Color.RED)
-        TrajectoryGen.drawOffbounds()
         gc.globalAlpha = 1.0
+
+        if (trajectories.isEmpty())
+            return
 
         val trajectory = trajectories[activeTrajectoryIndex]
 
-        val prevDurations: Double = {
-            var x = 0.0
-            for (i in 0 until activeTrajectoryIndex)
-                x += trajectoryDurations[i]
-            x
-        }()
+        var x = 0.0
+        for (i in 0 until activeTrajectoryIndex)
+            x += trajectoryDurations[i]
+        val prevDurations: Double = x
 
         val time = Clock.seconds
         val profileTime = time - startTime - prevDurations
@@ -103,13 +109,13 @@ class App : Application() {
 
         if (profileTime >= duration) {
             activeTrajectoryIndex++
-            if(activeTrajectoryIndex >= numberOfTrajectories) {
+            if (activeTrajectoryIndex >= numberOfTrajectories) {
                 activeTrajectoryIndex = 0
                 startTime = time
             }
         }
 
-        trajectories.forEach{GraphicsUtil.drawSampledPath(it.path)}
+        trajectories.forEach { GraphicsUtil.drawSampledPath(it.path) }
 
         GraphicsUtil.updateRobotRect(startRect, start, GraphicsUtil.END_BOX_COLOR, 0.5)
         GraphicsUtil.updateRobotRect(endRect, end, GraphicsUtil.END_BOX_COLOR, 0.5)
@@ -117,7 +123,7 @@ class App : Application() {
         GraphicsUtil.updateRobotRect(robotRect, current, GraphicsUtil.ROBOT_COLOR, 0.75)
         GraphicsUtil.drawRobotVector(current)
 
-        stage.title = "Profile duration : ${"%.2f".format(duration)} - time in profile ${"%.2f".format(profileTime)}"
+        stage.title = "(${activeTrajectoryIndex + 1}/$numberOfTrajectories) current ${"%.2f".format(profileTime)}/${"%.2f".format(duration)}, total ${"%.2f".format(profileTime + prevDurations)}/${"%.2f".format(this.duration)}"
     }
 }
 

@@ -5,6 +5,7 @@ import javafx.scene.canvas.GraphicsContext
 
 import javafx.scene.paint.Color
 import javafx.scene.shape.Rectangle
+import kotlin.math.ceil
 
 
 object GraphicsUtil {
@@ -30,7 +31,7 @@ object GraphicsUtil {
 
     fun drawSampledPath(path: Path) {
         setColor(PATH_COLOR)
-        val samples = Math.ceil(path.length() / DEFUALT_RESOLUTION).toInt()
+        val samples = ceil(path.length() / DEFUALT_RESOLUTION).toInt()
         val points = Array(samples) { Vector2d() }
         val dx = path.length() / (samples - 1).toDouble()
         for (i in 0 until samples) {
