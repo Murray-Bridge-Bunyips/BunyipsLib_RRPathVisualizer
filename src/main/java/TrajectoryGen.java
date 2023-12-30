@@ -1,18 +1,14 @@
+import com.acmerobotics.roadrunner.geometry.Pose2d;
+import com.acmerobotics.roadrunner.geometry.Vector2d;
 import com.acmerobotics.roadrunner.trajectory.Trajectory;
-import com.acmerobotics.roadrunner.trajectory.constraints.DriveConstraints;
+import com.acmerobotics.roadrunner.trajectory.constraints.MecanumVelocityConstraint;
+import com.acmerobotics.roadrunner.trajectory.constraints.ProfileAccelerationConstraint;
 
 import java.util.ArrayList;
 
 public class TrajectoryGen extends TrajectoryGenInternal {
-    public static double trackWidth = 16.0; // in
-    public static DriveConstraints driveConstraints = new DriveConstraints(
-            60.0, // maxVel (in/s)
-            60.0, // maxAccel (in/s^2)
-            0.0, // maxJerk (in/s^3)
-            Math.toRadians(270.0), // maxAngVel (rad/s)
-            Math.toRadians(270.0), // maxAngAccel (rad/s^2)
-            0.0 // maxAngJerk (rad/s^3)
-    );
+    public static MecanumVelocityConstraint velConstraint = new MecanumVelocityConstraint(30, 16);
+    public static ProfileAccelerationConstraint accelConstraint = new ProfileAccelerationConstraint(30);
 
     /**
      * Populate trajectories here using addNewTrajectory()

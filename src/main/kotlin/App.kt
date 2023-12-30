@@ -64,6 +64,7 @@ class App : Application() {
         stage.title = "RRPathVisualizer"
         stage.isResizable = false
 
+        println("\nTrajectoryGen.createTrajectories() generated $numberOfTrajectories " + if (numberOfTrajectories == 1) "trajectory" else "trajectories")
         for (i in 0 until numberOfTrajectories)
             println("trajectory ${i + 1} duration: ${trajectoryDurations[i]} sec")
 
