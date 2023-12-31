@@ -5,15 +5,22 @@ import com.acmerobotics.roadrunner.geometry.Vector2d
 import com.acmerobotics.roadrunner.trajectory.*
 import com.acmerobotics.roadrunner.trajectory.constraints.TrajectoryAccelerationConstraint
 import com.acmerobotics.roadrunner.trajectory.constraints.TrajectoryVelocityConstraint
+import com.acmerobotics.roadrunner.util.Angle
 
 /**
- * Port of BunyipsLib `addNewTrajectory()` features
+ * Port of BunyipsLib RoadRunner `addNewTrajectory()` features and a hacky port of TrajectorySequence
  * @author Lucas Bubner, 2023
  */
+@Suppress("unused")
 open class TrajectoryGenInternal {
     companion object {
+        private const val TURN_OFFSET = 0.01
+
         @JvmStatic
         protected val t = ArrayList<Trajectory>()
+
+        @JvmStatic
+        val timeouts = ArrayList<Pair<Int, Double>>()
 
         @JvmStatic
         private var lastPose: Pose2d = Pose2d()
@@ -23,26 +30,25 @@ open class TrajectoryGenInternal {
 
         @JvmStatic
         protected fun addNewTrajectory(pose: Pose2d) = Builder(pose, pose.heading, velConstraint, accelConstraint)
+
+        // newTrajectory methods use the base implementation, which represents their normal behaviour of not accepting
+        // constraints and methods such as reversed, waitSeconds, turn etc. as they are not supported normally
+        @JvmStatic
+        protected fun newTrajectory() = TrajectoryBuilder(lastPose, lastPose.heading, velConstraint, accelConstraint)
+
+        @JvmStatic
+        protected fun newTrajectory(pose: Pose2d) = TrajectoryBuilder(pose, pose.heading, velConstraint, accelConstraint)
     }
 
     class Builder(pose: Pose2d, heading: Double, velocityConstraint: TrajectoryVelocityConstraint, accelerationConstraint: TrajectoryAccelerationConstraint) {
-        private val i: TrajectoryBuilder = TrajectoryBuilder(pose, heading, velocityConstraint, accelerationConstraint)
+        private var i: TrajectoryBuilder = TrajectoryBuilder(pose, heading, velocityConstraint, accelerationConstraint)
 
-        fun setTangent(tangent: Double): Builder {
-            println("setTangent($tangent) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun setReversed(reversed: Boolean): Builder {
-            println("setReversed($reversed) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
+        @Suppress("unused_parameter")
         fun setConstraints(
             velConstraint: TrajectoryVelocityConstraint,
             accelConstraint: TrajectoryAccelerationConstraint
         ): Builder {
-            println("setConstraints($velConstraint, $accelConstraint) called on trajectory ${t.size + 1}, not supported!")
+            println("setConstraints(velConstraint, accelConstraint) called on trajectory ${t.size + 1}, not supported!")
             return this
         }
 
@@ -51,8 +57,9 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        @Suppress("unused_parameter")
         fun setVelConstraint(velConstraint: TrajectoryVelocityConstraint): Builder {
-            println("setVelConstraint($velConstraint) called on trajectory ${t.size + 1}, not supported!")
+            println("setVelConstraint(velConstraint) called on trajectory ${t.size + 1}, not supported!")
             return this
         }
 
@@ -61,8 +68,9 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        @Suppress("unused_parameter")
         fun setAccelConstraint(accelConstraint: TrajectoryAccelerationConstraint): Builder {
-            println("setAccelConstraint($accelConstraint) called on trajectory ${t.size + 1}, not supported!")
+            println("setAccelConstraint(accelConstraint) called on trajectory ${t.size + 1}, not supported!")
             return this
         }
 
@@ -81,41 +89,97 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        @Suppress("unused_parameter")
         fun UNSTABLE_addTemporalMarkerOffset(offset: Double, callback: MarkerCallback): Builder {
-            println("UNSTABLE_addTemporalMarkerOffset($offset, $callback) called on trajectory ${t.size + 1}, not supported!")
+            println("UNSTABLE_addTemporalMarkerOffset($offset, callback) called on trajectory ${t.size + 1}, not supported!")
             return this
         }
 
+        @Suppress("unused_parameter")
         fun UNSTABLE_addDisplacementMarkerOffset(offset: Double, callback: MarkerCallback): Builder {
-            println("UNSTABLE_addDisplacementMarkerOffset($offset, $callback) called on trajectory ${t.size + 1}, not supported!")
+            println("UNSTABLE_addDisplacementMarkerOffset($offset, callback) called on trajectory ${t.size + 1}, not supported!")
             return this
         }
 
-        fun turn(angle: Double): Builder {
-            println("turn($angle) called on trajectory ${t.size + 1}, not supported!")
+        fun setTangent(tangent: Double): Builder {
+            println("setTangent($tangent) called on trajectory ${t.size + 1}, not supported!")
+            return this
+        }
+
+        fun setReversed(reversed: Boolean): Builder {
+            println("setReversed($reversed) called on trajectory ${t.size + 1}, not supported!")
             return this
         }
 
         fun turn(angle: Double, maxAngVel: Double, maxAngAccel: Double): Builder {
-            println("turn($angle, $maxAngVel, $maxAngAccel) called on trajectory ${t.size + 1}, not supported!")
+            // Constraints are not supported, so we will just ignore them
+            println("turn($angle, $maxAngVel, $maxAngAccel) called on trajectory ${t.size + 1}, not supported! passed to turn($angle) ...")
+            turn(angle)
             return this
         }
 
+        fun build(): Trajectory? {
+            try {
+                val trajectory = i.build()
+                t.add(trajectory)
+                lastPose = trajectory.end()
+                i = TrajectoryBuilder(lastPose, lastPose.heading, velConstraint, accelConstraint)
+                return trajectory
+            } catch (e: NoSuchElementException) {
+                // Trajectory is empty, will return null to avoid errors
+                return null
+            }
+        }
+
         fun waitSeconds(seconds: Double): Builder {
-            println("waitSeconds($seconds) called on trajectory ${t.size + 1}, not supported!")
+            if (seconds < 0.0)
+                throw IllegalArgumentException("seconds must be positive")
+
+            // Need to early build to update queue timing
+            build()
+
+            timeouts.add(Pair(t.size - 1, seconds))
+            if (t.size == 0)
+                println("waitSeconds($seconds) is not natively supported, queued start wait")
+            else
+                println("waitSeconds($seconds) is not natively supported, queued extended idle duration for trajectory ${t.size + 1}")
+            return this
+        }
+
+        fun turn(angle: Double): Builder {
+            // Need to early build and reset to get the end pose and to split the trajectory
+            build()
+
+            // We can't turn naturally, so we will instead translate the turn into a lineToLinearHeading mock trajectory
+            // This trajectory has a small length to not raise an empty trajectory error, which is a bit of a hack
+            // However, this offset will be reversed when the next trajectory is constructed
+            val newPose = Pose2d(
+                lastPose.vec().plus(Vector2d(TURN_OFFSET, 0.0)),
+                Angle.norm(lastPose.heading + angle)
+            )
+
+            addNewTrajectory()
+                .lineToLinearHeading(newPose)
+                .build()
+
+            // Since we have inserted a trajectory with modified heading we need to reset the builder
+            // We can remove the offset here as well, effectively reversing any inaccuracies
+            i = TrajectoryBuilder(
+                Pose2d(newPose.vec().minus(Vector2d(TURN_OFFSET, 0.0)), newPose.heading),
+                newPose.heading,
+                velConstraint,
+                accelConstraint
+            )
+
+            println("turn($angle) has been translated into trajectory ${t.size}, as this is not a native method")
             return this
         }
 
         fun addTrajectory(trajectory: Trajectory): Builder {
-            println("addTrajectory($trajectory) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun build(): Trajectory {
-            val trajectory = i.build()
-            lastPose = trajectory.end()
+            println("addTrajectory(${trajectory.start()} -> ${trajectory.end()}, ${trajectory.duration()} sec) called on trajectory ${t.size + 1}, added as a new trajectory.")
+            // We can't attach the trajectory to the sequence, but we can instead add it to the trajectories list
             t.add(trajectory)
-            return trajectory
+            return this
         }
 
         fun lineTo(endPosition: Vector2d): Builder {
@@ -263,14 +327,20 @@ open class TrajectoryGenInternal {
         /**
          * Adds a marker to the trajectory at [time].
          */
-        fun addTemporalMarker(time: Double, callback: MarkerCallback) =
-            addTemporalMarker(0.0, time, callback)
+        fun addTemporalMarker(time: Double, callback: MarkerCallback): Builder {
+            i.addTemporalMarker(time, callback)
+
+            return this
+        }
 
         /**
          * Adds a marker to the trajectory at [scale] * trajectory duration + [offset].
          */
-        fun addTemporalMarker(scale: Double, offset: Double, callback: MarkerCallback) =
-            addTemporalMarker({ scale * it + offset }, callback)
+        fun addTemporalMarker(scale: Double, offset: Double, callback: MarkerCallback): Builder {
+            i.addTemporalMarker(scale, offset, callback)
+
+            return this
+        }
 
         /**
          * Adds a marker to the trajectory at [time] evaluated with the trajectory duration.
@@ -293,19 +363,29 @@ open class TrajectoryGenInternal {
         /**
          * Adds a marker at the current position of the trajectory.
          */
-        fun addDisplacementMarker(callback: MarkerCallback) = i.addDisplacementMarker(callback)
+        fun addDisplacementMarker(callback: MarkerCallback): Builder {
+            i.addDisplacementMarker(callback)
+
+            return this
+        }
 
         /**
          * Adds a marker to the trajectory at [displacement].
          */
-        fun addDisplacementMarker(displacement: Double, callback: MarkerCallback) =
-            addDisplacementMarker(0.0, displacement, callback)
+        fun addDisplacementMarker(displacement: Double, callback: MarkerCallback): Builder {
+            i.addDisplacementMarker(displacement, callback)
+
+            return this
+        }
 
         /**
          * Adds a marker to the trajectory at [scale] * path length + [offset].
          */
-        fun addDisplacementMarker(scale: Double, offset: Double, callback: MarkerCallback) =
-            addDisplacementMarker({ scale * it + offset }, callback)
+        fun addDisplacementMarker(scale: Double, offset: Double, callback: MarkerCallback): Builder {
+            i.addDisplacementMarker(scale, offset, callback)
+
+            return this
+        }
 
         /**
          * Adds a marker to the trajectory at [displacement] evaluated with path length.

@@ -16,21 +16,23 @@ import javafx.stage.Stage
 import javafx.util.Duration
 
 class App : Application() {
-    val robotRect = Rectangle(100.0, 100.0, 10.0, 10.0)
-    val startRect = Rectangle(100.0, 100.0, 10.0, 10.0)
-    val endRect = Rectangle(100.0, 100.0, 10.0, 10.0)
+    private val robotRect = Rectangle(100.0, 100.0, 10.0, 10.0)
+    private val startRect = Rectangle(100.0, 100.0, 10.0, 10.0)
+    private val endRect = Rectangle(100.0, 100.0, 10.0, 10.0)
 
-    var startTime = Double.NaN
-    val trajectories = TrajectoryGen.createTrajectories()
+    private var startTime = Double.NaN
+    private val trajectories = TrajectoryGen.createTrajectories()
+    private val timeouts = TrajectoryGenInternal.timeouts
 
-    lateinit var fieldImage: Image
-    lateinit var stage: Stage
+    private lateinit var fieldImage: Image
+    private lateinit var stage: Stage
 
-
-    var activeTrajectoryIndex = 0
-    val trajectoryDurations = trajectories.map { it.duration() }
-    val duration = trajectoryDurations.sum()
-    val numberOfTrajectories = trajectories.size
+    private var activeTrajectoryIndex = 0
+    private val trajectoryDurations = trajectories.map { it.duration() }
+    private var duration = trajectoryDurations.sum() + timeouts.sumByDouble { it.second }
+    private val numberOfTrajectories = trajectories.size
+    private var lockoutTime = 0.0
+    private var firstRun = true
 
     companion object {
         var WIDTH = 0.0
@@ -68,7 +70,10 @@ class App : Application() {
         for (i in 0 until numberOfTrajectories)
             println("trajectory ${i + 1} duration: ${trajectoryDurations[i]} sec")
 
-        if (numberOfTrajectories == 0)
+        for (t in timeouts)
+            println("timeout queued with trajectory ${t.first + 1}, duration: ${t.second} sec")
+
+        if (numberOfTrajectories == 0 && timeouts.isEmpty())
             println("no trajectories generated! add some to TrajectoryGen.createTrajectories()")
 
         println("total duration: $duration sec")
@@ -97,12 +102,33 @@ class App : Application() {
 
         var x = 0.0
         for (i in 0 until activeTrajectoryIndex)
-            x += trajectoryDurations[i]
+            x += trajectoryDurations[i] + timeouts.filter { it.first == i }.sumByDouble { it.second }
         val prevDurations: Double = x
+
+        // Check for first run conditions matching a sleep-first timeout
+        if (firstRun && activeTrajectoryIndex == 0 && timeouts.size > 0 && timeouts.first().first == -1) {
+            if (lockoutTime == 0.0)
+                lockoutTime = Clock.seconds
+            // Lock starting time for first run as we don't have a trajectory to rely on
+            startTime = Clock.seconds
+
+            val totalTrajectories = numberOfTrajectories
+            val currentClockTime = Clock.seconds - lockoutTime
+            val totalTimeout = timeouts.first().second
+            val totalDuration = "%.2f".format(this.duration)
+            stage.title = "(0/$totalTrajectories) sleeping ${"%.2f".format(currentClockTime)}/$totalTimeout, total ${"%.2f".format(currentClockTime)}/$totalDuration"
+
+            // Timeout completion handling
+            if (lockoutTime + timeouts.first().second < Clock.seconds)
+                firstRun = false
+        }
 
         val time = Clock.seconds
         val profileTime = time - startTime - prevDurations
-        val duration = trajectoryDurations[activeTrajectoryIndex]
+
+        // Append any timeouts to the previous trajectory
+        val additionalTime = timeouts.filter { it.first == activeTrajectoryIndex }.sumByDouble { it.second }
+        val duration = trajectoryDurations[activeTrajectoryIndex] + additionalTime
 
         val start = trajectories.first().start()
         val end = trajectories.last().end()
@@ -112,6 +138,8 @@ class App : Application() {
             activeTrajectoryIndex++
             if (activeTrajectoryIndex >= numberOfTrajectories) {
                 activeTrajectoryIndex = 0
+                firstRun = true
+                lockoutTime = 0.0
                 startTime = time
             }
         }
@@ -124,7 +152,21 @@ class App : Application() {
         GraphicsUtil.updateRobotRect(robotRect, current, GraphicsUtil.ROBOT_COLOR, 0.75)
         GraphicsUtil.drawRobotVector(current)
 
-        stage.title = "(${activeTrajectoryIndex + 1}/$numberOfTrajectories) current ${"%.2f".format(profileTime)}/${"%.2f".format(duration)}, total ${"%.2f".format(profileTime + prevDurations)}/${"%.2f".format(this.duration)}"
+        if (firstRun && timeouts.size > 0 && timeouts.first().first == -1)
+            return
+
+        val currentIndex = activeTrajectoryIndex + 1
+        val totalTrajectories = numberOfTrajectories
+        val currentProfileTime = "%.2f".format(profileTime)
+        val totalProfileTime = "%.2f".format(profileTime + prevDurations + if (timeouts.isNotEmpty() && timeouts.first().first == -1) timeouts.first().second else 0.0)
+        val remainingTime = "%.2f".format(profileTime - trajectoryDurations[activeTrajectoryIndex])
+
+        stage.title = if (additionalTime > 0 && profileTime >= trajectoryDurations[activeTrajectoryIndex]) {
+            "($currentIndex/$totalTrajectories) sleeping $remainingTime/${"%.2f".format(additionalTime)}, total $totalProfileTime/${"%.2f".format(this.duration)}"
+        } else {
+            "($currentIndex/$totalTrajectories) current $currentProfileTime/${"%.2f".format(if (additionalTime > 0) duration - additionalTime else duration)}, total $totalProfileTime/${"%.2f".format(this.duration)}"
+        }
+
     }
 }
 
