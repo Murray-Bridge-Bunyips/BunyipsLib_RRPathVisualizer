@@ -14,6 +14,7 @@ import javafx.scene.shape.Rectangle
 
 import javafx.stage.Stage
 import javafx.util.Duration
+import java.time.Clock
 
 class App : Application() {
     private val robotRect = Rectangle(100.0, 100.0, 10.0, 10.0)
@@ -84,7 +85,7 @@ class App : Application() {
 
     private fun run(gc: GraphicsContext) {
         if (startTime.isNaN())
-            startTime = Clock.seconds
+            startTime = System.currentTimeMillis() / 1000.0
 
         GraphicsUtil.gc = gc
         gc.drawImage(fieldImage, 0.0, 0.0)
@@ -108,22 +109,22 @@ class App : Application() {
         // Check for first run conditions matching a sleep-first timeout
         if (firstRun && activeTrajectoryIndex == 0 && timeouts.size > 0 && timeouts.first().first == -1) {
             if (lockoutTime == 0.0)
-                lockoutTime = Clock.seconds
+                lockoutTime = System.currentTimeMillis() / 1000.0
             // Lock starting time for first run as we don't have a trajectory to rely on
-            startTime = Clock.seconds
+            startTime = System.currentTimeMillis() / 1000.0
 
             val totalTrajectories = numberOfTrajectories
-            val currentClockTime = Clock.seconds - lockoutTime
+            val currentClockTime = System.currentTimeMillis() / 1000.0 - lockoutTime
             val totalTimeout = timeouts.first().second
             val totalDuration = "%.2f".format(this.duration)
             stage.title = "(0/$totalTrajectories) sleeping ${"%.2f".format(currentClockTime)}/$totalTimeout, total ${"%.2f".format(currentClockTime)}/$totalDuration"
 
             // Timeout completion handling
-            if (lockoutTime + timeouts.first().second < Clock.seconds)
+            if (lockoutTime + timeouts.first().second < System.currentTimeMillis() / 1000.0)
                 firstRun = false
         }
 
-        val time = Clock.seconds
+        val time = System.currentTimeMillis() / 1000.0
         val profileTime = time - startTime - prevDurations
 
         // Append any timeouts to the previous trajectory

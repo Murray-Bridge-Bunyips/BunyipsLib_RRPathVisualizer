@@ -1,14 +1,18 @@
-import TrajectoryGen.accelConstraint
-import TrajectoryGen.velConstraint
+import TrajectoryGen.*
+import bunyipslib.external.units.Angle
+import bunyipslib.external.units.Distance
+import bunyipslib.external.units.Units.*
+import bunyipslib.external.units.Velocity
 import com.acmerobotics.roadrunner.geometry.Pose2d
 import com.acmerobotics.roadrunner.geometry.Vector2d
 import com.acmerobotics.roadrunner.trajectory.*
-import com.acmerobotics.roadrunner.trajectory.constraints.TrajectoryAccelerationConstraint
-import com.acmerobotics.roadrunner.trajectory.constraints.TrajectoryVelocityConstraint
-import com.acmerobotics.roadrunner.util.Angle
+import com.acmerobotics.roadrunner.trajectory.constraints.*
+import com.acmerobotics.roadrunner.util.Angle.norm
+import java.util.*
+
 
 /**
- * Port of BunyipsLib RoadRunner `addNewTrajectory()` features and a hacky port of TrajectorySequence
+ * Port of BunyipsLib RoadRunner `makeTrajectory()` features and a hacky port of TrajectorySequence
  * @author Lucas Bubner, 2023
  */
 @Suppress("unused")
@@ -26,22 +30,60 @@ open class TrajectoryGenInternal {
         private var lastPose: Pose2d = Pose2d()
 
         @JvmStatic
-        protected fun addNewTrajectory() = Builder(lastPose, lastPose.heading, velConstraint, accelConstraint)
+        protected fun makeTrajectory() = Builder(lastPose, lastPose.heading, atVelocity(maxVel.magnitude(), maxVel.unit()), atAccelerations(maxAccel.magnitude(), maxAccel.unit(), maxAngularAccel.magnitude(), maxAngularAccel.unit()))
 
         @JvmStatic
-        protected fun addNewTrajectory(pose: Pose2d) = Builder(pose, pose.heading, velConstraint, accelConstraint)
-
-        // newTrajectory methods use the base implementation, which represents their normal behaviour of not accepting
-        // constraints and methods such as reversed, waitSeconds, turn etc. as they are not supported normally
-        @JvmStatic
-        protected fun newTrajectory() = TrajectoryBuilder(lastPose, lastPose.heading, velConstraint, accelConstraint)
+        protected fun makeTrajectory(pose: Pose2d) = Builder(pose, pose.heading, atVelocity(maxVel.inUnit(InchesPerSecond), InchesPerSecond), atAcceleration(maxAccel.inUnit(InchesPerSecond.per(Second)), InchesPerSecond.per(Second)))
 
         @JvmStatic
-        protected fun newTrajectory(pose: Pose2d) = TrajectoryBuilder(pose, pose.heading, velConstraint, accelConstraint)
+        protected fun atVelocity(translation: Double, unit: Velocity<Distance>): TrajectoryVelocityConstraint {
+            return MinVelocityConstraint(
+                listOf(
+                    AngularVelocityConstraint(maxAngularVel.inUnit(RadiansPerSecond)),
+                    MecanumVelocityConstraint(unit.of(translation).inUnit(InchesPerSecond), trackWidth.inUnit(Inches))
+                )
+            )
+        }
+
+        @JvmStatic
+        protected fun atAngularVelocity(angularVelocity: Double, unit: Velocity<Angle>): TrajectoryVelocityConstraint {
+            return MinVelocityConstraint(
+                listOf(
+                    AngularVelocityConstraint(unit.of(angularVelocity).inUnit(Radians.per(Second))),
+                    MecanumVelocityConstraint(maxVel.inUnit(InchesPerSecond), trackWidth.inUnit(Inches))
+                )
+            )
+        }
+
+        @JvmStatic
+        protected fun atVelocities(translationalVelocity: Double, translationalVelocityUnit: Velocity<Distance>, angularVelocity: Double, angularVelocityUnit: Velocity<Angle>): TrajectoryVelocityConstraint {
+            return MinVelocityConstraint(
+                listOf(
+                    AngularVelocityConstraint(angularVelocityUnit.of(angularVelocity).inUnit(Radians.per(Second))),
+                    MecanumVelocityConstraint(translationalVelocityUnit.of(translationalVelocity).inUnit(Inches.per(Second)), trackWidth.inUnit(Inches))
+                )
+            )
+        }
+
+        @JvmStatic
+        protected fun atAcceleration(acceleration: Double, unit: Velocity<Velocity<Distance>>): TrajectoryAccelerationConstraint {
+            return ProfileAccelerationConstraint(unit.of(acceleration).inUnit(InchesPerSecond.per(Second)))
+        }
+
+        @JvmStatic
+        protected fun atAngularAcceleration(acceleration: Double, unit: Velocity<Velocity<Angle>>): TrajectoryAccelerationConstraint {
+            return ProfileAccelerationConstraint(unit.of(acceleration).inUnit(RadiansPerSecond.per(Seconds)))
+        }
+
+        @JvmStatic
+        protected fun atAccelerations(translation: Double, translationUnit: Velocity<Velocity<Distance>>, angular: Double, angularUnit: Velocity<Velocity<Angle>>): TrajectoryAccelerationConstraint {
+            return atAcceleration(translation, translationUnit)
+        }
     }
 
     class Builder(pose: Pose2d, heading: Double, velocityConstraint: TrajectoryVelocityConstraint, accelerationConstraint: TrajectoryAccelerationConstraint) {
         private var i: TrajectoryBuilder = TrajectoryBuilder(pose, heading, velocityConstraint, accelerationConstraint)
+        private var r: TrajectoryBuilder = TrajectoryBuilder(pose, heading, velocityConstraint, accelerationConstraint)
 
         @Suppress("unused_parameter")
         fun setConstraints(
@@ -118,12 +160,12 @@ open class TrajectoryGenInternal {
             return this
         }
 
-        fun build(): Trajectory? {
+        fun addTask(): Trajectory? {
             try {
                 val trajectory = i.build()
                 t.add(trajectory)
                 lastPose = trajectory.end()
-                i = TrajectoryBuilder(lastPose, lastPose.heading, velConstraint, accelConstraint)
+                i = TrajectoryBuilder(lastPose, lastPose.heading, atVelocity(maxVel.magnitude(), maxVel.unit()), atAccelerations(maxAccel.magnitude(), maxAccel.unit(), maxAngularAccel.magnitude(), maxAngularAccel.unit()))
                 return trajectory
             } catch (e: NoSuchElementException) {
                 // Trajectory is empty, will return null to avoid errors
@@ -136,7 +178,7 @@ open class TrajectoryGenInternal {
                 throw IllegalArgumentException("seconds must be positive")
 
             // Need to early build to update queue timing
-            build()
+            addTask()
 
             timeouts.add(Pair(t.size - 1, seconds))
             if (t.size == 0)
@@ -148,27 +190,37 @@ open class TrajectoryGenInternal {
 
         fun turn(angle: Double): Builder {
             // Need to early build and reset to get the end pose and to split the trajectory
-            build()
+            addTask()
 
             // We can't turn naturally, so we will instead translate the turn into a lineToLinearHeading mock trajectory
             // This trajectory has a small length to not raise an empty trajectory error, which is a bit of a hack
             // However, this offset will be reversed when the next trajectory is constructed
             val newPose = Pose2d(
                 lastPose.vec().plus(Vector2d(TURN_OFFSET, 0.0)),
-                Angle.norm(lastPose.heading + angle)
+                norm(lastPose.heading + angle)
             )
 
-            addNewTrajectory()
+            makeTrajectory()
                 .lineToLinearHeading(newPose)
-                .build()
+                .addTask()
 
             // Since we have inserted a trajectory with modified heading we need to reset the builder
             // We can remove the offset here as well, effectively reversing any inaccuracies
             i = TrajectoryBuilder(
                 Pose2d(newPose.vec().minus(Vector2d(TURN_OFFSET, 0.0)), newPose.heading),
                 newPose.heading,
-                velConstraint,
-                accelConstraint
+                atVelocities(
+                    maxVel.magnitude(),
+                    maxVel.unit(),
+                    maxAngularVel.magnitude(),
+                    maxAngularVel.unit()
+                ),
+                atAccelerations(
+                    maxAccel.magnitude(),
+                    maxAccel.unit(),
+                    maxAngularAccel.magnitude(),
+                    maxAngularAccel.unit()
+                )
             )
 
             println("turn($angle) has been translated into trajectory ${t.size}, as this is not a native method")
