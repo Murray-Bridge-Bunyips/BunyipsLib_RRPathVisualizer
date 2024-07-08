@@ -11,18 +11,20 @@ import javafx.scene.image.Image
 import javafx.scene.layout.StackPane
 import javafx.scene.paint.Color
 import javafx.scene.shape.Rectangle
-
 import javafx.stage.Stage
 import javafx.util.Duration
-import java.time.Clock
 
 class App : Application() {
+    init {
+        TrajectoryGen.createTrajectories()
+    }
+
     private val robotRect = Rectangle(100.0, 100.0, 10.0, 10.0)
     private val startRect = Rectangle(100.0, 100.0, 10.0, 10.0)
     private val endRect = Rectangle(100.0, 100.0, 10.0, 10.0)
 
     private var startTime = Double.NaN
-    private val trajectories = TrajectoryGen.createTrajectories()
+    private val trajectories = TrajectoryGenInternal.t
     private val timeouts = TrajectoryGenInternal.timeouts
 
     private lateinit var fieldImage: Image
@@ -117,7 +119,9 @@ class App : Application() {
             val currentClockTime = System.currentTimeMillis() / 1000.0 - lockoutTime
             val totalTimeout = timeouts.first().second
             val totalDuration = "%.2f".format(this.duration)
-            stage.title = "(0/$totalTrajectories) sleeping ${"%.2f".format(currentClockTime)}/$totalTimeout, total ${"%.2f".format(currentClockTime)}/$totalDuration"
+            stage.title = "(0/$totalTrajectories) sleeping ${"%.2f".format(currentClockTime)}/$totalTimeout, total ${
+                "%.2f".format(currentClockTime)
+            }/$totalDuration"
 
             // Timeout completion handling
             if (lockoutTime + timeouts.first().second < System.currentTimeMillis() / 1000.0)
@@ -159,13 +163,22 @@ class App : Application() {
         val currentIndex = activeTrajectoryIndex + 1
         val totalTrajectories = numberOfTrajectories
         val currentProfileTime = "%.2f".format(profileTime)
-        val totalProfileTime = "%.2f".format(profileTime + prevDurations + if (timeouts.isNotEmpty() && timeouts.first().first == -1) timeouts.first().second else 0.0)
+        val totalProfileTime =
+            "%.2f".format(profileTime + prevDurations + if (timeouts.isNotEmpty() && timeouts.first().first == -1) timeouts.first().second else 0.0)
         val remainingTime = "%.2f".format(profileTime - trajectoryDurations[activeTrajectoryIndex])
 
         stage.title = if (additionalTime > 0 && profileTime >= trajectoryDurations[activeTrajectoryIndex]) {
-            "($currentIndex/$totalTrajectories) sleeping $remainingTime/${"%.2f".format(additionalTime)}, total $totalProfileTime/${"%.2f".format(this.duration)}"
+            "($currentIndex/$totalTrajectories) sleeping $remainingTime/${"%.2f".format(additionalTime)}, total $totalProfileTime/${
+                "%.2f".format(
+                    this.duration
+                )
+            }"
         } else {
-            "($currentIndex/$totalTrajectories) current $currentProfileTime/${"%.2f".format(if (additionalTime > 0) duration - additionalTime else duration)}, total $totalProfileTime/${"%.2f".format(this.duration)}"
+            "($currentIndex/$totalTrajectories) current $currentProfileTime/${"%.2f".format(if (additionalTime > 0) duration - additionalTime else duration)}, total $totalProfileTime/${
+                "%.2f".format(
+                    this.duration
+                )
+            }"
         }
 
     }

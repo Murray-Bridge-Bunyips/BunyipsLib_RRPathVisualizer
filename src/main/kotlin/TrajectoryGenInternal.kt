@@ -1,14 +1,13 @@
 import TrajectoryGen.*
-import bunyipslib.external.units.Angle
-import bunyipslib.external.units.Distance
+import bunyipslib.external.units.*
 import bunyipslib.external.units.Units.*
-import bunyipslib.external.units.Velocity
 import com.acmerobotics.roadrunner.geometry.Pose2d
 import com.acmerobotics.roadrunner.geometry.Vector2d
-import com.acmerobotics.roadrunner.trajectory.*
+import com.acmerobotics.roadrunner.trajectory.MarkerCallback
+import com.acmerobotics.roadrunner.trajectory.Trajectory
+import com.acmerobotics.roadrunner.trajectory.TrajectoryBuilder
 import com.acmerobotics.roadrunner.trajectory.constraints.*
 import com.acmerobotics.roadrunner.util.Angle.norm
-import java.util.*
 
 
 /**
@@ -21,7 +20,7 @@ open class TrajectoryGenInternal {
         private const val TURN_OFFSET = 0.01
 
         @JvmStatic
-        protected val t = ArrayList<Trajectory>()
+        val t = ArrayList<Trajectory>()
 
         @JvmStatic
         val timeouts = ArrayList<Pair<Int, Double>>()
@@ -30,10 +29,28 @@ open class TrajectoryGenInternal {
         private var lastPose: Pose2d = Pose2d()
 
         @JvmStatic
-        protected fun makeTrajectory() = Builder(lastPose, lastPose.heading, atVelocity(maxVel.magnitude(), maxVel.unit()), atAccelerations(maxAccel.magnitude(), maxAccel.unit(), maxAngularAccel.magnitude(), maxAngularAccel.unit()))
+        protected fun makeTrajectory() = Builder(
+            lastPose,
+            lastPose.heading,
+            atVelocity(maxVel.magnitude(), maxVel.unit()),
+            atAcceleration(maxAccel.magnitude(), maxAccel.unit())
+        )
 
         @JvmStatic
-        protected fun makeTrajectory(pose: Pose2d) = Builder(pose, pose.heading, atVelocity(maxVel.inUnit(InchesPerSecond), InchesPerSecond), atAcceleration(maxAccel.inUnit(InchesPerSecond.per(Second)), InchesPerSecond.per(Second)))
+        protected fun makeTrajectory(pose: Pose2d) = Builder(
+            pose,
+            pose.heading,
+            atVelocity(maxVel.inUnit(InchesPerSecond), InchesPerSecond),
+            atAcceleration(maxAccel.inUnit(InchesPerSecond.per(Second)), InchesPerSecond.per(Second))
+        )
+
+        @JvmStatic
+        protected fun makeTrajectory(startPose: Pose2d, inUnit: Distance, angleUnit: Angle): Builder {
+            val x = Inches.convertFrom(startPose.x, inUnit)
+            val y = Inches.convertFrom(startPose.y, inUnit)
+            val r = Radians.convertFrom(startPose.heading, angleUnit)
+            return makeTrajectory(Pose2d(x, y, r))
+        }
 
         @JvmStatic
         protected fun atVelocity(translation: Double, unit: Velocity<Distance>): TrajectoryVelocityConstraint {
@@ -56,121 +73,87 @@ open class TrajectoryGenInternal {
         }
 
         @JvmStatic
-        protected fun atVelocities(translationalVelocity: Double, translationalVelocityUnit: Velocity<Distance>, angularVelocity: Double, angularVelocityUnit: Velocity<Angle>): TrajectoryVelocityConstraint {
+        protected fun atVelocities(
+            translationalVelocity: Double,
+            translationalVelocityUnit: Velocity<Distance>,
+            angularVelocity: Double,
+            angularVelocityUnit: Velocity<Angle>
+        ): TrajectoryVelocityConstraint {
             return MinVelocityConstraint(
                 listOf(
                     AngularVelocityConstraint(angularVelocityUnit.of(angularVelocity).inUnit(Radians.per(Second))),
-                    MecanumVelocityConstraint(translationalVelocityUnit.of(translationalVelocity).inUnit(Inches.per(Second)), trackWidth.inUnit(Inches))
+                    MecanumVelocityConstraint(
+                        translationalVelocityUnit.of(translationalVelocity).inUnit(Inches.per(Second)),
+                        trackWidth.inUnit(Inches)
+                    )
                 )
             )
         }
 
         @JvmStatic
-        protected fun atAcceleration(acceleration: Double, unit: Velocity<Velocity<Distance>>): TrajectoryAccelerationConstraint {
+        protected fun atAcceleration(
+            acceleration: Double,
+            unit: Velocity<Velocity<Distance>>
+        ): TrajectoryAccelerationConstraint {
             return ProfileAccelerationConstraint(unit.of(acceleration).inUnit(InchesPerSecond.per(Second)))
         }
 
         @JvmStatic
-        protected fun atAngularAcceleration(acceleration: Double, unit: Velocity<Velocity<Angle>>): TrajectoryAccelerationConstraint {
-            return ProfileAccelerationConstraint(unit.of(acceleration).inUnit(RadiansPerSecond.per(Seconds)))
+        protected fun unitPose(pose: Pose2d, distanceUnit: Distance, angleUnit: Angle): Pose2d {
+            return Pose2d(
+                Inches.convertFrom(pose.x, distanceUnit),
+                Inches.convertFrom(pose.y, distanceUnit),
+                Radians.convertFrom(pose.heading, angleUnit)
+            )
         }
 
         @JvmStatic
-        protected fun atAccelerations(translation: Double, translationUnit: Velocity<Velocity<Distance>>, angular: Double, angularUnit: Velocity<Velocity<Angle>>): TrajectoryAccelerationConstraint {
-            return atAcceleration(translation, translationUnit)
+        protected fun unitVec(vector: Vector2d, unit: Distance): Vector2d {
+            return Vector2d(
+                Inches.convertFrom(vector.x, unit),
+                Inches.convertFrom(vector.y, unit)
+            )
         }
     }
 
-    class Builder(pose: Pose2d, heading: Double, velocityConstraint: TrajectoryVelocityConstraint, accelerationConstraint: TrajectoryAccelerationConstraint) {
+    class Builder(
+        pose: Pose2d,
+        heading: Double,
+        velocityConstraint: TrajectoryVelocityConstraint,
+        accelerationConstraint: TrajectoryAccelerationConstraint
+    ) {
         private var i: TrajectoryBuilder = TrajectoryBuilder(pose, heading, velocityConstraint, accelerationConstraint)
         private var r: TrajectoryBuilder = TrajectoryBuilder(pose, heading, velocityConstraint, accelerationConstraint)
 
-        @Suppress("unused_parameter")
-        fun setConstraints(
-            velConstraint: TrajectoryVelocityConstraint,
-            accelConstraint: TrajectoryAccelerationConstraint
-        ): Builder {
-            println("setConstraints(velConstraint, accelConstraint) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun resetConstraints(): Builder {
-            println("resetConstraints() called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        @Suppress("unused_parameter")
-        fun setVelConstraint(velConstraint: TrajectoryVelocityConstraint): Builder {
-            println("setVelConstraint(velConstraint) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun resetVelConstraint(): Builder {
-            println("resetVelConstraint() called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        @Suppress("unused_parameter")
-        fun setAccelConstraint(accelConstraint: TrajectoryAccelerationConstraint): Builder {
-            println("setAccelConstraint(accelConstraint) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun resetAccelConstraint(): Builder {
-            println("resetAccelConstraint() called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun setTurnConstraint(maxAngVel: Double, maxAngAccel: Double): Builder {
-            println("setTurnConstraint($maxAngVel, $maxAngAccel) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun resetTurnConstraint(): Builder {
-            println("resetTurnConstraint() called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        @Suppress("unused_parameter")
-        fun UNSTABLE_addTemporalMarkerOffset(offset: Double, callback: MarkerCallback): Builder {
-            println("UNSTABLE_addTemporalMarkerOffset($offset, callback) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        @Suppress("unused_parameter")
-        fun UNSTABLE_addDisplacementMarkerOffset(offset: Double, callback: MarkerCallback): Builder {
-            println("UNSTABLE_addDisplacementMarkerOffset($offset, callback) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun setTangent(tangent: Double): Builder {
-            println("setTangent($tangent) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun setReversed(reversed: Boolean): Builder {
-            println("setReversed($reversed) called on trajectory ${t.size + 1}, not supported!")
-            return this
-        }
-
-        fun turn(angle: Double, maxAngVel: Double, maxAngAccel: Double): Builder {
-            // Constraints are not supported, so we will just ignore them
-            println("turn($angle, $maxAngVel, $maxAngAccel) called on trajectory ${t.size + 1}, not supported! passed to turn($angle) ...")
-            turn(angle)
-            return this
-        }
-
+        /**
+         * Add this trajectory to the queue.
+         * This method is the only one left to be implemented from BunyipsLib,
+         * as advanced task construction is not supported in this visualiser.
+         */
         fun addTask(): Trajectory? {
             try {
                 val trajectory = i.build()
                 t.add(trajectory)
                 lastPose = trajectory.end()
-                i = TrajectoryBuilder(lastPose, lastPose.heading, atVelocity(maxVel.magnitude(), maxVel.unit()), atAccelerations(maxAccel.magnitude(), maxAccel.unit(), maxAngularAccel.magnitude(), maxAngularAccel.unit()))
+                i = TrajectoryBuilder(
+                    lastPose,
+                    lastPose.heading,
+                    atVelocity(maxVel.magnitude(), maxVel.unit()),
+                    atAcceleration(maxAccel.magnitude(), maxAccel.unit())
+                )
                 return trajectory
             } catch (e: NoSuchElementException) {
                 // Trajectory is empty, will return null to avoid errors
                 return null
             }
+        }
+
+        fun waitFor(time: Measure<Time>): Builder {
+            return waitSeconds(time.inUnit(Seconds))
+        }
+
+        fun waitFor(time: Double, unit: Time): Builder {
+            return waitSeconds(unit.of(time).inUnit(Seconds))
         }
 
         fun waitSeconds(seconds: Double): Builder {
@@ -186,6 +169,11 @@ open class TrajectoryGenInternal {
             else
                 println("waitSeconds($seconds) is not natively supported, queued extended idle duration for trajectory ${t.size + 1}")
             return this
+        }
+
+        fun turn(angle: Double, angleUnit: Angle): Builder {
+            val a = Radians.convertFrom(angle, angleUnit)
+            return turn(a)
         }
 
         fun turn(angle: Double): Builder {
@@ -215,11 +203,9 @@ open class TrajectoryGenInternal {
                     maxAngularVel.magnitude(),
                     maxAngularVel.unit()
                 ),
-                atAccelerations(
+                atAcceleration(
                     maxAccel.magnitude(),
-                    maxAccel.unit(),
-                    maxAngularAccel.magnitude(),
-                    maxAngularAccel.unit()
+                    maxAccel.unit()
                 )
             )
 
@@ -240,6 +226,12 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        fun lineTo(endPosition: Vector2d, inUnit: Distance): Builder {
+            val x = Inches.convertFrom(endPosition.x, inUnit)
+            val y = Inches.convertFrom(endPosition.y, inUnit)
+            return lineTo(Vector2d(x, y))
+        }
+
         /**
          * Adds a line segment with constant heading interpolation.
          *
@@ -249,6 +241,12 @@ open class TrajectoryGenInternal {
             i.lineToConstantHeading(endPosition)
 
             return this
+        }
+
+        fun lineToConstantHeading(endPosition: Vector2d, inUnit: Distance): Builder {
+            val x = Inches.convertFrom(endPosition.x, inUnit)
+            val y = Inches.convertFrom(endPosition.y, inUnit)
+            return lineToConstantHeading(Vector2d(x, y))
         }
 
         /**
@@ -262,6 +260,13 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        fun lineToLinearHeading(endPose: Pose2d, distanceUnit: Distance, angleUnit: Angle): Builder {
+            val x = Inches.convertFrom(endPose.x, distanceUnit)
+            val y = Inches.convertFrom(endPose.y, distanceUnit)
+            val r = Radians.convertFrom(endPose.heading, angleUnit)
+            return lineToLinearHeading(Pose2d(x, y, r))
+        }
+
         /**
          * Adds a line segment with spline heading interpolation.
          *
@@ -271,6 +276,13 @@ open class TrajectoryGenInternal {
             i.lineToSplineHeading(endPose)
 
             return this
+        }
+
+        fun lineToSplineHeading(endPose: Pose2d, distanceUnit: Distance, angleUnit: Angle): Builder {
+            val x = Inches.convertFrom(endPose.x, distanceUnit)
+            val y = Inches.convertFrom(endPose.y, distanceUnit)
+            val r = Radians.convertFrom(endPose.heading, angleUnit)
+            return lineToSplineHeading(Pose2d(x, y, r))
         }
 
         /**
@@ -284,6 +296,12 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        fun strafeTo(endPosition: Vector2d, inUnit: Distance): Builder {
+            val x = Inches.convertFrom(endPosition.x, inUnit)
+            val y = Inches.convertFrom(endPosition.y, inUnit)
+            return strafeTo(Vector2d(x, y))
+        }
+
         /**
          * Adds a line straight forward.
          *
@@ -293,6 +311,11 @@ open class TrajectoryGenInternal {
             i.forward(distance)
 
             return this
+        }
+
+        fun forward(distance: Double, inUnit: Distance): Builder {
+            val d = Inches.convertFrom(distance, inUnit)
+            return forward(d)
         }
 
         /**
@@ -306,6 +329,11 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        fun back(distance: Double, inUnit: Distance): Builder {
+            val d = Inches.convertFrom(distance, inUnit)
+            return back(d)
+        }
+
         /**
          * Adds a segment that strafes left in the robot reference frame.
          *
@@ -317,6 +345,11 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        fun strafeLeft(distance: Double, inUnit: Distance): Builder {
+            val d = Inches.convertFrom(distance, inUnit)
+            return strafeLeft(d)
+        }
+
         /**
          * Adds a segment that strafes right in the robot reference frame.
          *
@@ -326,6 +359,11 @@ open class TrajectoryGenInternal {
             i.strafeRight(distance)
 
             return this
+        }
+
+        fun strafeRight(distance: Double, inUnit: Distance): Builder {
+            val d = Inches.convertFrom(distance, inUnit)
+            return strafeRight(d)
         }
 
         /**
@@ -340,6 +378,13 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        fun splineTo(endPosition: Vector2d, inUnit: Distance, endHeading: Double, angleUnit: Angle): Builder {
+            val x = Inches.convertFrom(endPosition.x, inUnit)
+            val y = Inches.convertFrom(endPosition.y, inUnit)
+            val r = Radians.convertFrom(endHeading, angleUnit)
+            return splineTo(Vector2d(x, y), r)
+        }
+
         /**
          * Adds a spline segment with constant heading interpolation.
          *
@@ -350,6 +395,18 @@ open class TrajectoryGenInternal {
             i.splineToConstantHeading(endPosition, endTangent)
 
             return this
+        }
+
+        fun splineToConstantHeading(
+            endPosition: Vector2d,
+            inUnit: Distance,
+            endHeading: Double,
+            angleUnit: Angle
+        ): Builder {
+            val x = Inches.convertFrom(endPosition.x, inUnit)
+            val y = Inches.convertFrom(endPosition.y, inUnit)
+            val r = Radians.convertFrom(endHeading, angleUnit)
+            return splineToConstantHeading(Vector2d(x, y), r)
         }
 
         /**
@@ -364,6 +421,20 @@ open class TrajectoryGenInternal {
             return this
         }
 
+        fun splineToLinearHeading(
+            endPose: Pose2d,
+            distanceUnit: Distance,
+            angleUnit: Angle,
+            endHeading: Double,
+            endAngleUnit: Angle
+        ): Builder {
+            val x = Inches.convertFrom(endPose.x, distanceUnit)
+            val y = Inches.convertFrom(endPose.y, distanceUnit)
+            val r = Radians.convertFrom(endHeading, angleUnit)
+            val r2 = Radians.convertFrom(endPose.heading, endAngleUnit)
+            return splineToLinearHeading(Pose2d(x, y, r), r2)
+        }
+
         /**
          * Adds a spline segment with spline heading interpolation.
          *
@@ -376,14 +447,22 @@ open class TrajectoryGenInternal {
             return this
         }
 
-        /**
-         * Adds a marker to the trajectory at [time].
-         */
-        fun addTemporalMarker(time: Double, callback: MarkerCallback): Builder {
-            i.addTemporalMarker(time, callback)
-
-            return this
+        fun splineToSplineHeading(
+            endPose: Pose2d,
+            distanceUnit: Distance,
+            angleUnit: Angle,
+            endHeading: Double,
+            endAngleUnit: Angle
+        ): Builder {
+            val x = Inches.convertFrom(endPose.x, distanceUnit)
+            val y = Inches.convertFrom(endPose.y, distanceUnit)
+            val r = Radians.convertFrom(endHeading, angleUnit)
+            val r2 = Radians.convertFrom(endPose.heading, endAngleUnit)
+            return splineToSplineHeading(Pose2d(x, y, r), r2)
         }
+
+        // These methods below are taken straight from the builder and are not from the trajectory sequence,
+        // therefore they might not reflect the actual implementation for a real robot
 
         /**
          * Adds a marker to the trajectory at [scale] * trajectory duration + [offset].
