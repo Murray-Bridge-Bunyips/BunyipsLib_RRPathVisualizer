@@ -44,7 +44,7 @@ class App : Application() {
 
     override fun start(stage: Stage?) {
         this.stage = stage!!
-        fieldImage = Image("/field.png")
+        fieldImage = Image("/field.jpg")
 
         val root = Group()
 
