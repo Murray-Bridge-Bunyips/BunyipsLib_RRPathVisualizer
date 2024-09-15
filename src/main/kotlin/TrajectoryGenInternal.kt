@@ -217,11 +217,13 @@ open class TrajectoryGenInternal {
             println("addTrajectory(${trajectory.start()} -> ${trajectory.end()}, ${trajectory.duration()} sec) called on trajectory ${t.size + 1}, added as a new trajectory.")
             // We can't attach the trajectory to the sequence, but we can instead add it to the trajectories list
             t.add(trajectory)
+            if (autoAddTaskBetweenTrajectories) addTask()
             return this
         }
 
         fun lineTo(endPosition: Vector2d): Builder {
             i.lineTo(endPosition)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -239,6 +241,7 @@ open class TrajectoryGenInternal {
          */
         fun lineToConstantHeading(endPosition: Vector2d): Builder {
             i.lineToConstantHeading(endPosition)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -256,6 +259,7 @@ open class TrajectoryGenInternal {
          */
         fun lineToLinearHeading(endPose: Pose2d): Builder {
             i.lineToLinearHeading(endPose)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -274,6 +278,7 @@ open class TrajectoryGenInternal {
          */
         fun lineToSplineHeading(endPose: Pose2d): Builder {
             i.lineToSplineHeading(endPose)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -292,6 +297,7 @@ open class TrajectoryGenInternal {
          */
         fun strafeTo(endPosition: Vector2d): Builder {
             i.strafeTo(endPosition)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -309,6 +315,7 @@ open class TrajectoryGenInternal {
          */
         fun forward(distance: Double): Builder {
             i.forward(distance)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -325,6 +332,7 @@ open class TrajectoryGenInternal {
          */
         fun back(distance: Double): Builder {
             i.back(distance)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -341,6 +349,7 @@ open class TrajectoryGenInternal {
          */
         fun strafeLeft(distance: Double): Builder {
             i.strafeLeft(distance)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -357,6 +366,7 @@ open class TrajectoryGenInternal {
          */
         fun strafeRight(distance: Double): Builder {
             i.strafeRight(distance)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -374,6 +384,7 @@ open class TrajectoryGenInternal {
          */
         fun splineTo(endPosition: Vector2d, endTangent: Double): Builder {
             i.splineTo(endPosition, endTangent)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -393,6 +404,7 @@ open class TrajectoryGenInternal {
          */
         fun splineToConstantHeading(endPosition: Vector2d, endTangent: Double): Builder {
             i.splineToConstantHeading(endPosition, endTangent)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -417,6 +429,7 @@ open class TrajectoryGenInternal {
          */
         fun splineToLinearHeading(endPose: Pose2d, endTangent: Double): Builder {
             i.splineToLinearHeading(endPose, endTangent)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
@@ -443,6 +456,7 @@ open class TrajectoryGenInternal {
          */
         fun splineToSplineHeading(endPose: Pose2d, endTangent: Double): Builder {
             i.splineToSplineHeading(endPose, endTangent)
+            if (autoAddTaskBetweenTrajectories) addTask()
 
             return this
         }
